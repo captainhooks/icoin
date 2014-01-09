@@ -186,8 +186,7 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
     // Clicking on "Sign Message" in the Much receive page sends you to the sign message tab
     connect(receiveCoinsPage, SIGNAL(signMessage(QString)), this, SLOT(gotoSignMessageTab(QString)));
 
-    //gotoOverviewPage();
-    showHome();
+    gotoOverviewPage();
 }
 
 BitcoinGUI::~BitcoinGUI()
@@ -225,12 +224,6 @@ void BitcoinGUI::createActions()
     addressBookAction->setCheckable(true);
     addressBookAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_5));
     tabGroup->addAction(addressBookAction);
-
-    //chat box
-    iCoin = new QAction(QIcon(":/icons/export"), tr("&iCoin..."), this);
-    iCoin->setToolTip(tr("iCoin"));
-    iCoin->setCheckable(true);
-    tabGroup->addAction(iCoin);
 
     receiveCoinsAction = new QAction(QIcon(":/icons/receiving_addresses"), tr("&Receive"), this);
     receiveCoinsAction->setToolTip(tr("Show the list of addresses for receiving payments"));
@@ -274,7 +267,6 @@ void BitcoinGUI::createActions()
     connect(signMessageAction, SIGNAL(triggered()), this, SLOT(gotoSignMessageTab()));
     connect(verifyMessageAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(verifyMessageAction, SIGNAL(triggered()), this, SLOT(gotoVerifyMessageTab()));
-    connect(iCoin, SIGNAL(triggered()), this, SLOT(showHome()));
 
 #ifdef FIRST_CLASS_MESSAGING
     connect(firstClassMessagingAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
@@ -951,11 +943,6 @@ void BitcoinGUI::unlockWallet()
 }
 
 
-void BitcoinGUI::showHome()
-{
-    iCoin->setChecked(true);
-    //centralWidget->setCurrentWidget(chatBox);
-}
 
 void BitcoinGUI::showNormalIfMinimized(bool fToggleHidden)
 {

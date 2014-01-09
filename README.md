@@ -13,10 +13,10 @@ What is iCoin?
 iCoin is a modified version of Litecoin using scrypt as a proof-of-work algorithm but using the same
 blockchain parameters as Bitcoin:
  - 100 coins per block
- - 10 minutes block targets
+ - 3 minutes block targets
  - Subsidy halves in 128k blocks
  - 500 million total coins
- - 1008 blocks to retarget difficulty
+ - 480 blocks to retarget difficulty
 
 For more information, as well as an immediately useable, binary version of
 the iCoin client sofware, see http://www.icoin.pw.

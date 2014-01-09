@@ -852,16 +852,15 @@ int64 static GetBlockValue(int nHeight, int64 nFees, uint256 prevHash)
         nSubsidy = 100 * COIN;
 	}
 
-    // Subsidy is cut in half every 128000 blocks, which will occur approximately every 2 years
+    // Subsidy is cut in half every 128000 blocks, which will occur approximately every 8 month
     nSubsidy >>= (nHeight / 128000);
 
     return nSubsidy + nFees;
 }
 
 
-static const int64 nTargetTimespan = 7 * 24 * 60 * 60; // one weeks
-static const int64 nTargetSpacing = 10 * 60;
-static const int64 nInterval = nTargetTimespan / nTargetSpacing;
+static const int64 nTargetTimespan = 24 * 60 * 60; // iCoin: 24 hours
+static const int64 nTargetSpacing = 3 * 60; // iCoin: 3 minutes
 
 //
 // minimum amount of work that could possibly be required nTime after
@@ -878,8 +877,8 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
     bnResult.SetCompact(nBase);
     while (nTime > 0 && bnResult < bnProofOfWorkLimit)
     {
-        // Maximum 400% adjustment...
-        bnResult *= 4;
+        // Maximum 150% adjustment...
+        bnResult = (bnResult * 3) / 2;
         // ... in best-case exactly 4-times-normal target time
         nTime -= nTargetTimespan*4;
     }
@@ -896,15 +895,44 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     if (pindexLast == NULL)
         return nProofOfWorkLimit;
 
-    // Only change once per interval
-    if ((pindexLast->nHeight+1) % nInterval != 0)
+    // iCoin difficulty adjustment protocol switch
+    int64 nDiffSwitchBlock = 5200;
+    int nHeight = pindexLast->nHeight + 1;
+    bool fNewDifficultyProtocol = (nHeight >= nDiffSwitchBlock || fTestNet);
+
+    int64 nTargetTimespanCurrent = fNewDifficultyProtocol? nTargetTimespan : (7 * 24 * 60 * 60);
+	int64 nTargetSpacingCurrent = fNewDifficultyProtocol? nTargetSpacing : (10 * 60);
+	int64 nInterval = nTargetTimespanCurrent / nTargetSpacingCurrent;	
+	
+	//Starting at block 5200 re-target every block with exponential moving toward target spacing
+    if (fNewDifficultyProtocol)
+    {
+        if (nHeight == nDiffSwitchBlock)
+            return (bnProofOfWorkLimit).GetCompact(); // mindiff for the first block after retarget change
+
+            int64 nActualSpacing = pindexLast->GetBlockTime() - pindexLast->pprev->GetBlockTime();
+            
+            CBigNum bnNew;
+            bnNew.SetCompact(pindexLast->nBits);
+            
+            bnNew *= ((nInterval - 1) * nTargetSpacingCurrent + nActualSpacing + nActualSpacing);
+            bnNew /= ((nInterval + 1) * nTargetSpacingCurrent);
+
+            if (bnNew > bnProofOfWorkLimit) 
+                bnNew = bnProofOfWorkLimit;
+
+            return bnNew.GetCompact();
+    }
+
+    // Only change once per interval, or at protocol switch height
+    if ((nHeight % nInterval != 0) && (nHeight < nDiffSwitchBlock || fTestNet))
     {
         // Special difficulty rule for testnet:
         if (fTestNet)
         {
-            // If the new block's timestamp is more than 2*nTargetSpacing minutes
+            // If the new block's timestamp is more than 2* 10 minutes
             // then allow mining of a min-difficulty block.
-            if (pblock->nTime > pindexLast->nTime + nTargetSpacing*2)
+            if (pblock->nTime > pindexLast->nTime + nTargetSpacingCurrent*2)
                 return nProofOfWorkLimit;
             else
             {
@@ -922,27 +950,20 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     // iCoin: This fixes an issue where a 51% attack can change difficulty at will.
     // Go back the full period unless it's the first retarget after genesis. Code courtesy of Art Forz
     int blockstogoback = nInterval-1;
-    if ((pindexLast->nHeight+1) != nInterval)
+    if (nHeight != nInterval)
         blockstogoback = nInterval;
 
-    // Go back by what we want to be 14 days worth of blocks
+    // Go back by what we want to be 24 hours worth of blocks
     const CBlockIndex* pindexFirst = pindexLast;
     for (int i = 0; pindexFirst && i < blockstogoback; i++)
         pindexFirst = pindexFirst->pprev;
     assert(pindexFirst);
 
-    // Limit adjustment step
+    // Limit adjustment step to 400%
     int64 nActualTimespan = pindexLast->GetBlockTime() - pindexFirst->GetBlockTime();
     printf("  nActualTimespan = %"PRI64d"  before bounds\n", nActualTimespan);
 
-	if(pindexLast->nHeight+1 > 10000)	
-	{
-		if (nActualTimespan < nTargetTimespan/4)
-			nActualTimespan = nTargetTimespan/4;
-		if (nActualTimespan > nTargetTimespan*4)
-			nActualTimespan = nTargetTimespan*4;
-	}
-	else if(pindexLast->nHeight+1 > 5000)
+	if(pindexLast->nHeight+1 < 5200)	
 	{
 		if (nActualTimespan < nTargetTimespan/8)
 			nActualTimespan = nTargetTimespan/8;
@@ -951,24 +972,26 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
 	}
 	else 
 	{
-		if (nActualTimespan < nTargetTimespan/16)
-			nActualTimespan = nTargetTimespan/16;
-		if (nActualTimespan > nTargetTimespan*4)
-			nActualTimespan = nTargetTimespan*4;
+		int64 nActualTimespanMax = nTargetTimespanCurrent*4;
+		int64 nActualTimespanMin = nTargetTimespanCurrent/4;
+		if (nActualTimespan < nActualTimespanMin)
+			nActualTimespan = nActualTimespanMin;
+		if (nActualTimespan > nActualTimespanMax)
+			nActualTimespan = nActualTimespanMax;
 	}
 
     // Retarget
     CBigNum bnNew;
     bnNew.SetCompact(pindexLast->nBits);
     bnNew *= nActualTimespan;
-    bnNew /= nTargetTimespan;
+    bnNew /= nTargetTimespanCurrent;
 
     if (bnNew > bnProofOfWorkLimit)
         bnNew = bnProofOfWorkLimit;
 
     /// debug print
     printf("GetNextWorkRequired RETARGET\n");
-    printf("nTargetTimespan = %"PRI64d"    nActualTimespan = %"PRI64d"\n", nTargetTimespan, nActualTimespan);
+    printf("nTargetTimespan = %"PRI64d"    nActualTimespan = %"PRI64d"\n", nTargetTimespanCurrent, nActualTimespan);
     printf("Before: %08x  %s\n", pindexLast->nBits, CBigNum().SetCompact(pindexLast->nBits).getuint256().ToString().c_str());
     printf("After:  %08x  %s\n", bnNew.GetCompact(), bnNew.getuint256().ToString().c_str());
 
@@ -2287,7 +2310,7 @@ string GetWarnings(string strFor)
             if (alert.AppliesToMe() && alert.nPriority > nPriority)
             {
                 nPriority = alert.nPriority;
-                strStatusBar = alert.strStatusBar;
+                //strStatusBar = alert.strStatusBar;
             }
         }
     }
